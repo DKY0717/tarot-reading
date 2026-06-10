@@ -26,7 +26,7 @@
         </div>
         
         <div class="card-deck-area" id="cardDeckArea" style="display: none;">
-            <div class="deck-hint">✦ 左右移动鼠标旋转牌圈 · 点击选牌 ✦</div>
+            <div class="deck-hint">✦ 左右滑动旋转牌圈 · 点击选牌 ✦</div>
             <div class="card-circle-container">
                 <div class="card-circle" id="cardCircle"></div>
                 <div class="highlight-arrow" id="highlightArrow">▼</div>
@@ -219,6 +219,20 @@ document.addEventListener('DOMContentLoaded', function() {
             const offsetX = (e.clientX - centerX) / centerX;
             targetRotation = offsetX * 180;
         });
+
+        let touchStartX = 0;
+        let touchRotation = 0;
+
+        document.addEventListener('touchstart', function(e) {
+            touchStartX = e.touches[0].clientX;
+            touchRotation = targetRotation;
+        }, { passive: true });
+
+        document.addEventListener('touchmove', function(e) {
+            const touchX = e.touches[0].clientX;
+            const deltaX = touchX - touchStartX;
+            targetRotation = touchRotation + deltaX * 0.5;
+        }, { passive: true });
     }
     
     function startHighlightAnimation() {
