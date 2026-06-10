@@ -1,0 +1,558 @@
+{% extends "base.html" %}
+
+{% block title %}沉浸式抽牌 - {{ spread.name }}{% endblock %}
+
+{% block content %}
+<section class="immersive-section">
+    <video id="cameraFeed" class="camera-feed" autoplay playsinline></video>
+    <canvas id="handCanvas" class="hand-canvas"></canvas>
+
+    <div class="tutorial-overlay" id="tutorialOverlay">
+        <div class="tutorial-box">
+            <h2 class="tutorial-title">✦ 沉浸式抽牌指南 ✦</h2>
+            <div class="tutorial-steps">
+                <div class="tutorial-step">
+                    <div class="step-demo">
+                        <span class="demo-hand">✋</span>
+                    </div>
+                    <div class="step-info">
+                        <h3>第一步：旋转牌圈</h3>
+                        <p>张开手掌，左右移动来旋转牌圈<br>找到你心意的那张牌</p>
+                    </div>
+                </div>
+                <div class="tutorial-step">
+                    <div class="step-demo">
+                        <span class="demo-hand">☝️</span>
+                    </div>
+                    <div class="step-info">
+                        <h3>第二步：指向选牌</h3>
+                        <p>伸出食指指向屏幕<br>选中当前正面的牌</p>
+                    </div>
+                </div>
+                <div class="tutorial-step">
+                    <div class="step-demo">
+                        <span class="demo-cards">🂠🂠🂠</span>
+                    </div>
+                    <div class="step-info">
+                        <h3>第三步：揭示命运</h3>
+                        <p>选齐所有牌后<br>系统自动为你揭示和解读</p>
+                    </div>
+                </div>
+            </div>
+            <button class="btn btn-primary btn-large" id="startBtn">
+                <span class="btn-icon">✦</span>
+                开始体验
+            </button>
+            <p class="tutorial-note">需要允许摄像头权限 · 无摄像头可用鼠标操控</p>
+        </div>
+    </div>
+
+    <div class="camera-preview" id="cameraPreview">
+        <video id="previewVideo" autoplay playsinline muted></video>
+        <div class="gesture-badge" id="gestureBadge">
+            <span class="badge-icon">✋</span>
+            <span class="badge-text">旋转中</span>
+        </div>
+    </div>
+
+    <div class="immersive-header" id="immersiveHeader" style="display: none;">
+        <h1 class="immersive-title">{{ spread.name }}</h1>
+        <p class="immersive-subtitle" id="statusText">请举起手掌开始旋转牌圈</p>
+        <div class="gesture-guide" id="gestureGuide">
+            <div class="guide-item active" id="guideRotate">
+                <span class="guide-icon">✋</span>
+                <span>张开手掌 → 旋转</span>
+            </div>
+            <div class="guide-divider">|</div>
+            <div class="guide-item" id="guideSelect">
+                <span class="guide-icon">☝️</span>
+                <span>伸出食指 → 选牌</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="card-circle-container" id="circleContainer" style="display: none;">
+        <div class="card-circle" id="cardCircle"></div>
+        <div class="highlight-arrow" id="highlightArrow">▼</div>
+    </div>
+
+    <div class="hand-cursor" id="handCursor">
+        <div class="cursor-ring"></div>
+        <div class="cursor-dot"></div>
+    </div>
+
+    <div class="selection-panel" id="selectionPanel" style="display: none;">
+        <div class="selection-info">
+            <span class="selection-count" id="selectionCount">已选 0 / {{ spread.positions }}</span>
+            <span class="selection-hint" id="selectionHint">伸出食指选牌</span>
+        </div>
+        <div class="selected-slots" id="selectedSlots">
+            {% for i in range(spread.positions) %}
+            <div class="mini-slot" data-index="{{ i }}">
+                <span class="mini-slot-num">{{ i + 1 }}</span>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+
+    <div class="immersive-controls" id="immersiveControls" style="display: none;">
+        <button class="btn btn-outline btn-sm" id="mouseModeBtn">🖱 鼠标模式</button>
+        <a href="{{ url_for('reading', spread_id=spread.id) }}" class="btn btn-outline btn-sm">← 普通模式</a>
+    </div>
+
+    <div class="reveal-overlay" id="revealOverlay" style="display: none;">
+        <div class="reveal-cards" id="revealCards"></div>
+        <button class="btn btn-mystical btn-large" id="revealAllBtn">
+            <span class="btn-glow"></span>
+            揭示所有牌面
+        </button>
+    </div>
+
+    <div class="interpretation-overlay" id="interpretationOverlay" style="display: none;">
+        <div class="interpretation-box">
+            <h2 class="section-title"><span class="title-icon">✧</span> 塔罗解读</h2>
+            <div class="interpretation-content" id="interpretationContent"></div>
+            <div class="reading-actions">
+                <a href="{{ url_for('immersive_reading', spread_id=spread.id) }}" class="btn btn-primary">重新占卜</a>
+                <a href="{{ url_for('history') }}" class="btn btn-outline">查看记录</a>
+            </div>
+        </div>
+    </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+<script>
+(function() {
+    const SPREAD_ID = {{ spread.id }};
+    const TOTAL_NEEDED = {{ spread.positions }};
+
+    const tutorialOverlay = document.getElementById('tutorialOverlay');
+    const startBtn = document.getElementById('startBtn');
+    const cardCircle = document.getElementById('cardCircle');
+    const circleContainer = document.getElementById('circleContainer');
+    const highlightArrow = document.getElementById('highlightArrow');
+    const handCursor = document.getElementById('handCursor');
+    const statusText = document.getElementById('statusText');
+    const gestureGuide = document.getElementById('gestureGuide');
+    const guideRotate = document.getElementById('guideRotate');
+    const guideSelect = document.getElementById('guideSelect');
+    const selectionCount = document.getElementById('selectionCount');
+    const selectionHint = document.getElementById('selectionHint');
+    const selectedSlots = document.getElementById('selectedSlots');
+    const cameraPreview = document.getElementById('cameraPreview');
+    const previewVideo = document.getElementById('previewVideo');
+    const cameraFeed = document.getElementById('cameraFeed');
+    const handCanvas = document.getElementById('handCanvas');
+    const handCtx = handCanvas.getContext('2d');
+    const gestureBadge = document.getElementById('gestureBadge');
+    const revealOverlay = document.getElementById('revealOverlay');
+    const revealCards = document.getElementById('revealCards');
+    const revealAllBtn = document.getElementById('revealAllBtn');
+    const interpretationOverlay = document.getElementById('interpretationOverlay');
+    const interpretationContent = document.getElementById('interpretationContent');
+    const mouseModeBtn = document.getElementById('mouseModeBtn');
+    const selectionPanel = document.getElementById('selectionPanel');
+    const immersiveHeader = document.getElementById('immersiveHeader');
+    const immersiveControls = document.getElementById('immersiveControls');
+
+    let cardPool = [];
+    let selectedIds = [];
+    let selectedCardsData = [];
+    let currentReadingId = null;
+    let rotationAngle = 0;
+    let targetRotation = 0;
+    let useHandTracking = false;
+    let handX = 0.5;
+    let currentGesture = 'none';
+    let selectCooldown = false;
+    let highlightedIndex = -1;
+    let cardElements = [];
+
+    const RADIUS = Math.min(window.innerWidth, window.innerHeight) * 0.35;
+    const CARD_COUNT = 22;
+
+    startBtn.addEventListener('click', async function() {
+        tutorialOverlay.style.display = 'none';
+        immersiveHeader.style.display = 'block';
+        circleContainer.style.display = 'flex';
+        selectionPanel.style.display = 'block';
+        immersiveControls.style.display = 'flex';
+
+        try {
+            const resp = await fetch('/api/card_pool');
+            const data = await resp.json();
+            cardPool = data.cards.slice(0, CARD_COUNT);
+            renderCircle();
+            await initCamera();
+        } catch (e) {
+            console.error(e);
+            statusText.textContent = '加载失败，请刷新重试';
+        }
+    });
+
+    function renderCircle() {
+        cardCircle.innerHTML = '';
+        cardElements = [];
+        const angleStep = 360 / cardPool.length;
+
+        cardPool.forEach((card, i) => {
+            const el = document.createElement('div');
+            el.className = 'circle-card';
+            el.dataset.index = i;
+            el.dataset.id = card.id;
+            const angle = angleStep * i;
+            el.style.transform = `rotateY(${angle}deg) translateZ(${RADIUS}px)`;
+            el.innerHTML = `
+                <div class="circle-card-back">
+                    <div class="cc-pattern"></div>
+                    <div class="cc-symbol">☽</div>
+                </div>
+            `;
+            el.addEventListener('click', () => selectCard(i));
+            cardCircle.appendChild(el);
+            cardElements.push(el);
+        });
+    }
+
+    async function initCamera() {
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480, facingMode: 'user' } });
+            cameraFeed.srcObject = stream;
+            previewVideo.srcObject = stream;
+            await cameraFeed.play();
+            await previewVideo.play();
+            handCanvas.width = 640;
+            handCanvas.height = 480;
+
+            const hands = new Hands({
+                locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+            });
+            hands.setOptions({
+                maxNumHands: 1,
+                modelComplexity: 1,
+                minDetectionConfidence: 0.7,
+                minTrackingConfidence: 0.5
+            });
+            hands.onResults(onHandResults);
+
+            const camera = new Camera(cameraFeed, {
+                onFrame: async () => { await hands.send({ image: cameraFeed }); },
+                width: 640, height: 480
+            });
+            await camera.start();
+
+            useHandTracking = true;
+            statusText.textContent = '请举起手掌开始旋转牌圈';
+            cameraPreview.style.display = 'block';
+            gestureGuide.style.display = 'flex';
+            startAnimation();
+        } catch (e) {
+            console.warn('摄像头不可用:', e);
+            statusText.textContent = '摄像头不可用 · 请用鼠标操控';
+            gestureGuide.style.display = 'none';
+            cameraPreview.style.display = 'none';
+            useHandTracking = false;
+            initMouseMode();
+            startAnimation();
+        }
+    }
+
+    function detectGesture(landmarks) {
+        const indexUp = landmarks[8].y < landmarks[6].y - 0.015;
+        const middleUp = landmarks[12].y < landmarks[10].y - 0.015;
+        const ringUp = landmarks[16].y < landmarks[14].y - 0.015;
+        const pinkyUp = landmarks[20].y < landmarks[18].y - 0.015;
+
+        const palmCenter = landmarks[9];
+        const thumbDist = Math.hypot(landmarks[4].x - palmCenter.x, landmarks[4].y - palmCenter.y);
+        const thumbOut = thumbDist > 0.08;
+
+        const fingersUp = [indexUp, middleUp, ringUp, pinkyUp].filter(Boolean).length;
+
+        if (indexUp && fingersUp === 1 && !thumbOut) return 'point';
+        if (fingersUp >= 3) return 'palm';
+        if (indexUp && middleUp && fingersUp === 2) return 'palm';
+        return 'none';
+    }
+
+    function onHandResults(results) {
+        handCtx.clearRect(0, 0, 640, 480);
+
+        if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+            const landmarks = results.multiHandLandmarks[0];
+            drawHandSkeleton(landmarks);
+
+            const palm = landmarks[9];
+            handX = 1 - palm.x;
+
+            currentGesture = detectGesture(landmarks);
+
+            const indexUp = landmarks[8].y < landmarks[6].y - 0.015;
+            const middleUp = landmarks[12].y < landmarks[10].y - 0.015;
+            const ringUp = landmarks[16].y < landmarks[14].y - 0.015;
+            const pinkyUp = landmarks[20].y < landmarks[18].y - 0.015;
+            const fingerState = `${indexUp?'1':'·'}${middleUp?'1':'·'}${ringUp?'1':'·'}${pinkyUp?'1':'·'}`;
+
+            if (currentGesture === 'palm') {
+                const center = 0.5;
+                const offset = (handX - center) * 2;
+                targetRotation += offset * 2;
+                updateGestureUI('palm', fingerState);
+            } else if (currentGesture === 'point') {
+                updateHandCursor(landmarks[8]);
+                updateGestureUI('point', fingerState);
+                if (!selectCooldown && highlightedIndex >= 0) {
+                    selectCard(highlightedIndex);
+                    selectCooldown = true;
+                    setTimeout(() => { selectCooldown = false; }, 800);
+                }
+            } else {
+                updateGestureUI('none', fingerState);
+            }
+
+            handCursor.style.display = currentGesture === 'point' ? 'block' : 'none';
+        } else {
+            currentGesture = 'none';
+            updateGestureUI('none', '----');
+            handCursor.style.display = 'none';
+        }
+    }
+
+    function updateGestureUI(gesture, fingerState) {
+        const badgeIcon = gestureBadge.querySelector('.badge-icon');
+        const badgeText = gestureBadge.querySelector('.badge-text');
+        const stateStr = fingerState || '----';
+
+        if (gesture === 'palm') {
+            badgeIcon.textContent = '✋';
+            badgeText.textContent = `旋转中 [${stateStr}]`;
+            guideRotate.classList.add('active');
+            guideSelect.classList.remove('active');
+            statusText.textContent = '手掌旋转中 → 找到你心意的牌';
+        } else if (gesture === 'point') {
+            badgeIcon.textContent = '☝️';
+            badgeText.textContent = `选牌中 [${stateStr}]`;
+            guideRotate.classList.remove('active');
+            guideSelect.classList.add('active');
+            statusText.textContent = '食指选牌中 → 指向正面的牌';
+        } else {
+            badgeIcon.textContent = '👋';
+            badgeText.textContent = `等待 [${stateStr}]`;
+            guideRotate.classList.remove('active');
+            guideSelect.classList.remove('active');
+            statusText.textContent = '请举起手掌开始旋转牌圈';
+        }
+    }
+
+    function drawHandSkeleton(landmarks) {
+        const connections = [[0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],[5,9],[9,10],[10,11],[11,12],[9,13],[13,14],[14,15],[15,16],[13,17],[17,18],[18,19],[19,20],[0,17]];
+        handCtx.strokeStyle = 'rgba(255, 215, 0, 0.3)';
+        handCtx.lineWidth = 2;
+        connections.forEach(([a, b]) => {
+            handCtx.beginPath();
+            handCtx.moveTo(landmarks[a].x * 640, landmarks[a].y * 480);
+            handCtx.lineTo(landmarks[b].x * 640, landmarks[b].y * 480);
+            handCtx.stroke();
+        });
+        [4, 8, 12, 16, 20].forEach(i => {
+            handCtx.beginPath();
+            handCtx.arc(landmarks[i].x * 640, landmarks[i].y * 480, 4, 0, Math.PI * 2);
+            handCtx.fillStyle = i === 8 ? 'rgba(255, 100, 100, 0.9)' : 'rgba(255, 215, 0, 0.6)';
+            handCtx.fill();
+        });
+    }
+
+    function updateHandCursor(landmark) {
+        const x = (1 - landmark.x) * window.innerWidth;
+        const y = landmark.y * window.innerHeight;
+        handCursor.style.left = x + 'px';
+        handCursor.style.top = y + 'px';
+    }
+
+    function initMouseMode() {
+        let isDragging = false;
+        let lastX = 0;
+
+        document.addEventListener('mousedown', (e) => { isDragging = true; lastX = e.clientX; });
+        document.addEventListener('mousemove', (e) => {
+            handX = e.clientX / window.innerWidth;
+            handCursor.style.left = e.clientX + 'px';
+            handCursor.style.top = e.clientY + 'px';
+            if (isDragging) {
+                targetRotation += (e.clientX - lastX) * 0.3;
+                lastX = e.clientX;
+            }
+        });
+        document.addEventListener('mouseup', () => { isDragging = false; });
+
+        document.addEventListener('touchstart', (e) => { isDragging = true; lastX = e.touches[0].clientX; });
+        document.addEventListener('touchmove', (e) => {
+            const t = e.touches[0];
+            if (isDragging) { targetRotation += (t.clientX - lastX) * 0.3; lastX = t.clientX; }
+        });
+        document.addEventListener('touchend', () => { isDragging = false; });
+
+        mouseModeBtn.style.display = 'none';
+        statusText.textContent = '鼠标模式：拖拽旋转 · 点击选牌';
+        gestureGuide.style.display = 'none';
+    }
+
+    function startAnimation() {
+        function animate() {
+            rotationAngle += (targetRotation - rotationAngle) * 0.08;
+            cardCircle.style.transform = `rotateX(-5deg) rotateY(${rotationAngle}deg)`;
+            updateHighlight();
+            requestAnimationFrame(animate);
+        }
+        animate();
+    }
+
+    function updateHighlight() {
+        const angleStep = 360 / cardPool.length;
+        let norm = ((rotationAngle % 360) + 360) % 360;
+        let bestIdx = 0, bestDist = 999;
+
+        cardElements.forEach((el, i) => {
+            const cardAngle = (angleStep * i) % 360;
+            let diff = Math.abs(norm - cardAngle);
+            if (diff > 180) diff = 360 - diff;
+            if (diff < bestDist) { bestDist = diff; bestIdx = i; }
+            el.classList.remove('highlighted', 'near');
+            if (diff < 40) el.classList.add('near');
+        });
+
+        highlightedIndex = bestIdx;
+        cardElements[bestIdx].classList.add('highlighted');
+
+        const rect = cardElements[bestIdx].getBoundingClientRect();
+        highlightArrow.style.left = (rect.left + rect.width / 2) + 'px';
+        highlightArrow.style.top = (rect.top - 15) + 'px';
+        highlightArrow.style.display = 'block';
+    }
+
+    function selectCard(index) {
+        const card = cardPool[index];
+        const el = cardElements[index];
+
+        if (selectedIds.includes(card.id)) {
+            const idx = selectedIds.indexOf(card.id);
+            selectedIds.splice(idx, 1);
+            selectedCardsData.splice(idx, 1);
+            el.classList.remove('selected');
+            updateSelectionUI();
+            return;
+        }
+        if (selectedIds.length >= TOTAL_NEEDED) return;
+
+        selectedIds.push(card.id);
+        selectedCardsData.push(card);
+        el.classList.add('selected');
+
+        if (typeof magicBurst === 'function') {
+            const rect = el.getBoundingClientRect();
+            magicBurst(rect.left + rect.width / 2, rect.top + rect.height / 2, 20);
+        }
+
+        updateSelectionUI();
+        if (selectedIds.length === TOTAL_NEEDED) setTimeout(() => submitSelection(), 800);
+    }
+
+    function updateSelectionUI() {
+        selectionCount.textContent = `已选 ${selectedIds.length} / ${TOTAL_NEEDED}`;
+        const slots = selectedSlots.querySelectorAll('.mini-slot');
+        slots.forEach((slot, i) => {
+            if (i < selectedIds.length) {
+                slot.classList.add('filled');
+                const card = selectedCardsData[i];
+                slot.innerHTML = `<img src="/static/${card.image_path}" alt="${card.name}" onerror="this.parentElement.innerHTML='✦'">`;
+            } else {
+                slot.classList.remove('filled');
+                slot.innerHTML = `<span class="mini-slot-num">${i + 1}</span>`;
+            }
+        });
+        selectionHint.textContent = selectedIds.length < TOTAL_NEEDED ? '伸出食指选牌' : '✦ 牌已选齐 ✦';
+    }
+
+    async function submitSelection() {
+        statusText.textContent = '正在为你解读...';
+        try {
+            const resp = await fetch('/api/select_cards', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ spread_id: SPREAD_ID, question: '', card_ids: selectedIds })
+            });
+            const data = await resp.json();
+            if (data.error) { alert(data.error); return; }
+            currentReadingId = data.reading_id;
+            showRevealPhase(data.cards);
+        } catch (e) { console.error(e); alert('提交失败'); }
+    }
+
+    function showRevealPhase(cards) {
+        circleContainer.style.display = 'none';
+        selectionPanel.style.display = 'none';
+        gestureGuide.style.display = 'none';
+        highlightArrow.style.display = 'none';
+        immersiveHeader.style.display = 'none';
+        immersiveControls.style.display = 'none';
+        cameraPreview.style.display = 'none';
+
+        revealOverlay.style.display = 'flex';
+        revealCards.innerHTML = '';
+        cards.forEach((cardData, i) => {
+            const slot = document.createElement('div');
+            slot.className = 'reveal-card-slot';
+            slot.innerHTML = `
+                <div class="reveal-card-inner">
+                    <div class="reveal-card-back"><div class="rc-symbol">☽</div></div>
+                    <div class="reveal-card-front">
+                        <img src="/static/${cardData.card.image_path}" alt="${cardData.card.name}">
+                        <div class="rc-name">${cardData.card.name}</div>
+                        <div class="rc-orientation ${cardData.is_reversed ? 'reversed' : ''}">${cardData.is_reversed ? '逆位' : '正位'}</div>
+                    </div>
+                </div>`;
+            revealCards.appendChild(slot);
+        });
+
+        revealAllBtn.onclick = function() {
+            revealCards.querySelectorAll('.reveal-card-slot').forEach((slot, i) => {
+                setTimeout(() => {
+                    slot.classList.add('flipped');
+                    if (typeof magicBurst === 'function') {
+                        const r = slot.getBoundingClientRect();
+                        magicBurst(r.left + r.width / 2, r.top + r.height / 2, 20);
+                    }
+                }, i * 400);
+            });
+            revealAllBtn.style.display = 'none';
+            setTimeout(() => startStreaming(currentReadingId), cards.length * 400 + 500);
+        };
+    }
+
+    function startStreaming(readingId) {
+        interpretationOverlay.style.display = 'flex';
+        interpretationContent.innerHTML = '<div class="stream-loading"><div class="typing-indicator"><span></span><span></span><span></span></div><p class="stream-status">正在为你解读牌面，请稍候...</p></div>';
+        const es = new EventSource(`/api/stream/${readingId}`);
+        let full = '', done = false;
+        es.onmessage = function(ev) {
+            const d = JSON.parse(ev.data);
+            if (d.type === 'chunk') { full += d.content; interpretationContent.innerHTML = parseMarkdown(full) + '<span class="cursor">|</span>'; }
+            else if (d.type === 'done') { interpretationContent.innerHTML = parseMarkdown(d.content || full); done = true; es.close(); }
+        };
+        es.onerror = function() {
+            if (!done) { interpretationContent.innerHTML = full ? parseMarkdown(full) : '<p class="text-muted">AI 解读暂时不可用</p>'; es.close(); }
+        };
+    }
+
+    mouseModeBtn.addEventListener('click', () => {
+        useHandTracking = false;
+        cameraPreview.style.display = 'none';
+        initMouseMode();
+    });
+
+})();
+</script>
+{% endblock %}

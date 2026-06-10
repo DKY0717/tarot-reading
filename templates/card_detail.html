@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+
+{% block title %}{{ card.name }} - 牌义详情{% endblock %}
+
+{% block content %}
+<section class="card-detail-section">
+    <div class="section-container">
+        <a href="{{ url_for('cards_database') }}" class="back-link">
+            <span class="back-icon">←</span>
+            返回牌义数据库
+        </a>
+        
+        <div class="card-detail-card">
+            <div class="card-detail-header">
+                {% if card.image_path %}
+                <div class="card-detail-image-container">
+                    <img src="{{ url_for('static', filename=card.image_path) }}" alt="{{ card.name }}" class="detail-card-image" onerror="this.style.display='none';">
+                </div>
+                {% endif %}
+                <div class="card-number-large">{{ card.number }}</div>
+                <div class="card-info-header">
+                    <h1 class="card-name-large">{{ card.name }}</h1>
+                    <p class="card-name-en-large">{{ card.name_en }}</p>
+                    <div class="card-tags">
+                        <span class="tag tag-arcana">{{ card.arcana }}</span>
+                        {% if card.suit %}
+                        <span class="tag tag-suit">{{ card.suit }}</span>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+            
+            {% if card.description %}
+            <div class="card-description">
+                <h2 class="subsection-title">牌面描述</h2>
+                <p class="description-text">{{ card.description }}</p>
+            </div>
+            {% endif %}
+            
+            <div class="card-meanings">
+                <div class="meaning-block meaning-upright">
+                    <h2 class="meaning-title">
+                        <span class="meaning-icon">☀️</span>
+                        正位含义
+                    </h2>
+                    <p class="meaning-text">{{ card.upright_meaning }}</p>
+                </div>
+                
+                <div class="meaning-block meaning-reversed">
+                    <h2 class="meaning-title">
+                        <span class="meaning-icon">🌙</span>
+                        逆位含义
+                    </h2>
+                    <p class="meaning-text">{{ card.reversed_meaning }}</p>
+                </div>
+            </div>
+            
+            <div class="card-actions">
+                <a href="{{ url_for('reading', spread_id=1) }}" class="btn btn-primary">
+                    <span class="btn-icon">✦</span>
+                    用这张牌占卜
+                </a>
+                <a href="{{ url_for('cards_database') }}" class="btn btn-secondary">
+                    <span class="btn-icon">📖</span>
+                    查看其他牌
+                </a>
+            </div>
+        </div>
+    </div>
+</section>
+{% endblock %}

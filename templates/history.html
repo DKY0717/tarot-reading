@@ -1,0 +1,120 @@
+{% extends "base.html" %}
+
+{% block title %}占卜记录 - 命运之轮{% endblock %}
+
+{% block content %}
+<section class="history-section">
+    <div class="section-container">
+        <h1 class="section-title">
+            <span class="title-icon">📜</span>
+            占卜记录
+        </h1>
+        
+        {% if readings %}
+        <div class="history-list">
+            {% for reading in readings %}
+            <div class="history-item" data-id="{{ reading.id }}">
+                <div class="history-header">
+                    <div class="history-spread">
+                        <span class="spread-icon">
+                            {% if reading.spread.layout_type == 'single' %}◇
+                            {% elif reading.spread.layout_type == 'three_card' %}◇◇◇
+                            {% elif reading.spread.layout_type == 'love' %}♡
+                            {% else %}✧
+                            {% endif %}
+                        </span>
+                        {{ reading.spread.name }}
+                    </div>
+                    <div class="history-date">{{ reading.created_at.strftime('%Y-%m-%d %H:%M') }}</div>
+                </div>
+                
+                {% if reading.question %}
+                <div class="history-question">
+                    <span class="question-label">问题：</span>
+                    {{ reading.question }}
+                </div>
+                {% endif %}
+                
+                <div class="history-cards">
+                    {% set cards = reading.cards_drawn | from_json %}
+                    {% for card_data in cards %}
+                    <span class="history-card-tag">
+                        {{ card_data.card.name }}
+                        {% if card_data.is_reversed %}(逆位){% endif %}
+                    </span>
+                    {% endfor %}
+                </div>
+                
+                <div class="history-actions">
+                    <a href="{{ url_for('reading_detail', reading_id=reading.id) }}" class="btn btn-outline btn-sm">
+                        查看详情
+                    </a>
+                    <button class="btn btn-danger btn-sm delete-btn" data-id="{{ reading.id }}">
+                        删除
+                    </button>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <div class="empty-state">
+            <div class="empty-icon">📜</div>
+            <h3 class="empty-title">暂无占卜记录</h3>
+            <p class="empty-text">开始你的第一次占卜吧</p>
+            <a href="{{ url_for('index') }}" class="btn btn-primary">
+                <span class="btn-icon">✦</span>
+                开始占卜
+            </a>
+        </div>
+        {% endif %}
+        
+        {% if total_pages > 1 %}
+        <div class="pagination">
+            {% if page > 1 %}
+            <a href="?page={{ page - 1 }}" class="btn btn-outline btn-sm">&larr; 上一页</a>
+            {% endif %}
+            <span class="page-info">第 {{ page }} / {{ total_pages }} 页 (共 {{ total }} 条)</span>
+            {% if page < total_pages %}
+            <a href="?page={{ page + 1 }}" class="btn btn-outline btn-sm">下一页 &rarr;</a>
+            {% endif %}
+        </div>
+        {% endif %}
+    </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const deleteButtons = document.querySelectorAll('.delete-btn');
+    
+    deleteButtons.forEach(btn => {
+        btn.addEventListener('click', async function() {
+            const readingId = this.dataset.id;
+            if (confirm('确定要删除这条记录吗？')) {
+                try {
+                    const response = await fetch(`/api/reading/${readingId}`, {
+                        method: 'DELETE'
+                    });
+                    
+                    const data = await response.json();
+                    if (data.success) {
+                        const historyItem = document.querySelector(`.history-item[data-id="${readingId}"]`);
+                        if (historyItem) {
+                            historyItem.remove();
+                        }
+                        
+                        if (document.querySelectorAll('.history-item').length === 0) {
+                            location.reload();
+                        }
+                    }
+                } catch (error) {
+                    console.error('删除失败:', error);
+                    alert('删除失败，请重试');
+                }
+            }
+        });
+    });
+});
+</script>
+{% endblock %}

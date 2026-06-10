@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: tarot-reading
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn "app:create_app()" --bind 0.0.0.0:$PORT
+    envVars:
+      - key: FLASK_ENV
+        value: production
+      - key: MIMO_API_KEY
+        sync: false
+      - key: MIMO_BASE_URL
+        sync: false
+      - key: MIMO_MODEL
+        sync: false
+    disk:
+      name: tarot-db
+      mountPath: /opt/render/project/src/database
+      sizeGB: 1

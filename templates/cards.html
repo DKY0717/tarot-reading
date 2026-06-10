@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+
+{% block title %}牌义数据库 - 命运之轮{% endblock %}
+
+{% block content %}
+<section class="cards-section">
+    <div class="section-container">
+        <h1 class="section-title">
+            <span class="title-icon">📖</span>
+            牌义数据库
+        </h1>
+        
+        <div class="cards-filters">
+            <div class="filter-group">
+                <form action="{{ url_for('cards_database') }}" method="GET" class="search-form">
+                    <input type="text" name="search" class="mystical-input" placeholder="搜索牌名或牌义..." value="{{ search }}">
+                    <button type="submit" class="btn btn-primary">搜索</button>
+                </form>
+            </div>
+            
+            <div class="filter-buttons">
+                <a href="{{ url_for('cards_database') }}" class="btn btn-outline {% if not arcana_filter and not suit_filter %}active{% endif %}">全部</a>
+                <a href="{{ url_for('cards_database', arcana='大阿卡纳') }}" class="btn btn-outline {% if arcana_filter == '大阿卡纳' %}active{% endif %}">大阿卡纳</a>
+                <a href="{{ url_for('cards_database', arcana='小阿卡纳') }}" class="btn btn-outline {% if arcana_filter == '小阿卡纳' %}active{% endif %}">小阿卡纳</a>
+            </div>
+            
+            {% if arcana_filter == '小阿卡纳' or not arcana_filter %}
+            <div class="suit-filters">
+                <a href="{{ url_for('cards_database', suit='权杖') }}" class="btn btn-suit {% if suit_filter == '权杖' %}active{% endif %}">🔥 权杖</a>
+                <a href="{{ url_for('cards_database', suit='圣杯') }}" class="btn btn-suit {% if suit_filter == '圣杯' %}active{% endif %}">💧 圣杯</a>
+                <a href="{{ url_for('cards_database', suit='宝剑') }}" class="btn btn-suit {% if suit_filter == '宝剑' %}active{% endif %}">⚔️ 宝剑</a>
+                <a href="{{ url_for('cards_database', suit='星币') }}" class="btn btn-suit {% if suit_filter == '星币' %}active{% endif %}">⭐ 星币</a>
+            </div>
+            {% endif %}
+        </div>
+        
+        <div class="cards-grid">
+            {% for card in cards %}
+            <a href="{{ url_for('card_detail', card_id=card.id) }}" class="card-item">
+                <div class="card-mini">
+                    {% if card.image_path %}
+                    <img src="{{ url_for('static', filename=card.image_path) }}" alt="{{ card.name }}" class="card-mini-image" onerror="this.style.display='none'; this.parentElement.querySelector('.card-mini-content').style.display='flex';">
+                    {% endif %}
+                    <div class="card-mini-content" {% if card.image_path %}style="display: none;"{% endif %}>
+                        <div class="card-number">{{ card.number }}</div>
+                        <div class="card-name-mini">{{ card.name }}</div>
+                        <div class="card-arcana-mini">{{ card.arcana }}</div>
+                        {% if card.suit %}
+                        <div class="card-suit-mini">{{ card.suit }}</div>
+                        {% endif %}
+                    </div>
+                </div>
+                <div class="card-info">
+                    <h3 class="card-title">{{ card.name }}</h3>
+                    <p class="card-subtitle">{{ card.name_en }}</p>
+                    <div class="card-meaning-preview">
+                        <span class="meaning-label">正位：</span>{{ card.upright_meaning[:20] }}...
+                    </div>
+                </div>
+            </a>
+            {% endfor %}
+        </div>
+        
+        {% if not cards %}
+        <div class="no-results">
+            <p>没有找到匹配的牌</p>
+            <a href="{{ url_for('cards_database') }}" class="btn btn-primary">查看全部</a>
+        </div>
+        {% endif %}
+    </div>
+</section>
+{% endblock %}

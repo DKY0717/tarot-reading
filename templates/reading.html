@@ -1,0 +1,508 @@
+{% extends "base.html" %}
+
+{% block title %}{{ spread.name }} - 命运之轮{% endblock %}
+
+{% block content %}
+<section class="reading-section">
+    <div class="reading-container">
+        <div class="reading-header">
+            <h1 class="reading-title">{{ spread.name }}</h1>
+            <p class="reading-description">{{ spread.description }}</p>
+        </div>
+        
+        <div class="reading-input" id="readingInput">
+            <div class="input-group">
+                <label for="question" class="input-label">输入你的问题（可选）</label>
+                <textarea id="question" class="mystical-input" placeholder="在这里写下你想要探索的问题..." rows="3"></textarea>
+            </div>
+            <button class="btn btn-primary btn-large" id="startDrawBtn">
+                <span class="btn-icon">✦</span>
+                开始抽牌
+            </button>
+            <a href="{{ url_for('immersive_reading', spread_id=spread.id) }}" class="btn btn-outline btn-large immersive-link">
+                <span class="btn-icon">📷</span>
+                沉浸式抽牌（手势操控）
+            </a>
+        </div>
+        
+        <div class="card-deck-area" id="cardDeckArea" style="display: none;">
+            <div class="deck-hint">✦ 左右移动鼠标旋转牌圈 · 点击选牌 ✦</div>
+            <div class="card-circle-container">
+                <div class="card-circle" id="cardCircle"></div>
+                <div class="highlight-arrow" id="highlightArrow">▼</div>
+            </div>
+            <div class="selection-panel" id="selectionPanel">
+                <div class="selection-info">
+                    <span class="selection-count" id="selectionCount">已选 0 / {{ spread.positions }}</span>
+                </div>
+                <div class="selected-slots" id="selectedSlots">
+                    {% for i in range(spread.positions) %}
+                    <div class="mini-slot" data-index="{{ i }}">
+                        <span class="mini-slot-num">{{ i + 1 }}</span>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+        
+        <div class="reading-result" id="readingResult" style="display: none;">
+            <button class="btn btn-mystical" id="revealAll" style="display: none;">
+                <span class="btn-glow"></span>
+                揭示所有牌面
+            </button>
+            
+            <div class="interpretation-section" id="interpretationSection" style="display: none;">
+                <h2 class="section-title">
+                    <span class="title-icon">✧</span>
+                    塔罗解读
+                </h2>
+                <div class="interpretation-content" id="interpretationContent"></div>
+                
+                <div class="ai-chat-section" id="aiChatSection" style="display: none;">
+                    <div class="chat-header">
+                        <h3 class="chat-title">
+                            <span class="chat-icon">🔮</span>
+                            与塔罗AI对话
+                        </h3>
+                        <p class="chat-subtitle">有任何疑问，都可以继续向AI提问</p>
+                    </div>
+                    
+                    <div class="chat-messages" id="chatMessages">
+                        <div class="ai-message welcome-message">
+                            <div class="message-avatar">✧</div>
+                            <div class="message-content">
+                                <p>解读已完成！你对这次占卜有什么疑问吗？</p>
+                                <p>可以问我：</p>
+                                <ul>
+                                    <li>某张牌的具体含义</li>
+                                    <li>牌与牌之间的关系</li>
+                                    <li>如何应用这个指引</li>
+                                    <li>任何你好奇的问题</li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="chat-input-area">
+                        <div class="input-wrapper">
+                            <textarea id="chatInput" class="chat-input" placeholder="输入你的问题..." rows="1"></textarea>
+                            <button class="btn-send" id="sendBtn" disabled>
+                                <span class="send-icon">➤</span>
+                            </button>
+                        </div>
+                        <div class="chat-hint">按 Enter 发送，Shift+Enter 换行</div>
+                    </div>
+                </div>
+                
+                <div class="reading-actions">
+                    <button class="btn btn-secondary" id="newReading">
+                        <span class="btn-icon">↻</span>
+                        重新占卜
+                    </button>
+                    <a href="{{ url_for('history') }}" class="btn btn-outline">
+                        <span class="btn-icon">📜</span>
+                        查看记录
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const SPREAD_ID = {{ spread.id }};
+    const TOTAL_NEEDED = {{ spread.positions }};
+    const POSITIONS = [
+        {% if spread.layout_type == 'single' %}
+        { index: 0, meaning: '今日指引' }
+        {% else %}
+        {% for position in spread.positions_list %}
+        { index: {{ position.position - 1 }}, meaning: '{{ position.meaning }}' }{% if not loop.last %},{% endif %}
+        {% endfor %}
+        {% endif %}
+    ];
+    
+    const startDrawBtn = document.getElementById('startDrawBtn');
+    const readingInput = document.getElementById('readingInput');
+    const cardDeckArea = document.getElementById('cardDeckArea');
+    const readingResult = document.getElementById('readingResult');
+    const revealAll = document.getElementById('revealAll');
+    const interpretationSection = document.getElementById('interpretationSection');
+    const interpretationContent = document.getElementById('interpretationContent');
+    
+    let cardPool = [];
+    let selectedIds = [];
+    let selectedCardsData = [];
+    let currentReadingId = null;
+    
+    startDrawBtn.addEventListener('click', async function() {
+        startDrawBtn.disabled = true;
+        startDrawBtn.innerHTML = '<span class="spinner"></span>洗牌中...';
+        startDrawBtn.classList.add('loading');
+        
+        try {
+            const resp = await fetch('/api/card_pool');
+            const data = await resp.json();
+            cardPool = data.cards;
+            
+            readingInput.style.display = 'none';
+            cardDeckArea.style.display = 'block';
+            
+            renderDeck();
+            
+            const shuffleOverlay = document.createElement('div');
+            shuffleOverlay.className = 'shuffle-overlay';
+            shuffleOverlay.innerHTML = '<div class="shuffle-cards"><div class="shuffle-card"></div><div class="shuffle-card"></div><div class="shuffle-card"></div><div class="shuffle-card"></div><div class="shuffle-card"></div></div><div class="shuffle-text">✦ 洗牌中 ✦</div>';
+            document.body.appendChild(shuffleOverlay);
+            
+            setTimeout(() => {
+                shuffleOverlay.remove();
+                cardDeckArea.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                
+                if (typeof particleBurst === 'function') {
+                    particleBurst(window.innerWidth / 2, window.innerHeight / 2, 25);
+                }
+            }, 1500);
+        } catch (e) {
+            console.error(e);
+            alert('加载牌池失败，请重试');
+            startDrawBtn.disabled = false;
+            startDrawBtn.innerHTML = '<span class="btn-icon">✦</span>开始抽牌';
+            startDrawBtn.classList.remove('loading');
+        }
+    });
+    
+    const cardCircle = document.getElementById('cardCircle');
+    const highlightArrow = document.getElementById('highlightArrow');
+    const selectionCount = document.getElementById('selectionCount');
+    const selectedSlots = document.getElementById('selectedSlots');
+    
+    const RADIUS = Math.min(window.innerWidth, window.innerHeight) * 0.35;
+    let rotationAngle = 0;
+    let targetRotation = 0;
+    let highlightedIndex = -1;
+    let cardElements = [];
+    
+    function renderDeck() {
+        cardCircle.innerHTML = '';
+        cardElements = [];
+        const angleStep = 360 / cardPool.length;
+        
+        cardPool.forEach((card, i) => {
+            const el = document.createElement('div');
+            el.className = 'circle-card';
+            el.dataset.index = i;
+            el.dataset.id = card.id;
+            const angle = angleStep * i;
+            el.style.transform = `rotateY(${angle}deg) translateZ(${RADIUS}px)`;
+            el.innerHTML = `
+                <div class="circle-card-back">
+                    <div class="cc-pattern"></div>
+                    <div class="cc-symbol">☽</div>
+                </div>
+            `;
+            el.addEventListener('click', () => selectCard(i));
+            cardCircle.appendChild(el);
+            cardElements.push(el);
+        });
+        
+        initMouseRotation();
+        startHighlightAnimation();
+    }
+    
+    function initMouseRotation() {
+        document.addEventListener('mousemove', function(e) {
+            const centerX = window.innerWidth / 2;
+            const offsetX = (e.clientX - centerX) / centerX;
+            targetRotation = offsetX * 180;
+        });
+    }
+    
+    function startHighlightAnimation() {
+        const angleStep = 360 / cardPool.length;
+        
+        function update() {
+            rotationAngle += (targetRotation - rotationAngle) * 0.1;
+            cardCircle.style.transform = `rotateY(${rotationAngle}deg)`;
+            
+            const normalizedAngle = ((rotationAngle % 360) + 360) % 360;
+            const newHighlight = Math.round(normalizedAngle / angleStep) % cardPool.length;
+            
+            if (newHighlight !== highlightedIndex) {
+                if (highlightedIndex >= 0 && cardElements[highlightedIndex]) {
+                    cardElements[highlightedIndex].classList.remove('highlighted');
+                }
+                highlightedIndex = newHighlight;
+                if (cardElements[highlightedIndex]) {
+                    cardElements[highlightedIndex].classList.add('highlighted');
+                }
+            }
+            
+            requestAnimationFrame(update);
+        }
+        update();
+    }
+    
+    function selectCard(index) {
+        const card = cardPool[index];
+        const el = cardElements[index];
+        
+        if (el.classList.contains('selected')) {
+            const idx = selectedIds.indexOf(card.id);
+            if (idx > -1) {
+                selectedIds.splice(idx, 1);
+                selectedCardsData.splice(idx, 1);
+                el.classList.remove('selected');
+                updateSelectionUI();
+            }
+            return;
+        }
+        
+        if (selectedIds.length >= TOTAL_NEEDED) return;
+        
+        selectedIds.push(card.id);
+        selectedCardsData.push(card);
+        el.classList.add('selected');
+        updateSelectionUI();
+        
+        if (typeof magicBurst === 'function') {
+            const rect = el.getBoundingClientRect();
+            magicBurst(rect.left + rect.width / 2, rect.top + rect.height / 2, 15);
+        }
+        
+        if (selectedIds.length === TOTAL_NEEDED) {
+            setTimeout(() => submitSelection(), 600);
+        }
+    }
+    
+    function updateSelectionUI() {
+        selectionCount.textContent = `已选 ${selectedIds.length} / ${TOTAL_NEEDED}`;
+        
+        const slots = selectedSlots.querySelectorAll('.mini-slot');
+        slots.forEach((slot, i) => {
+            if (i < selectedIds.length) {
+                slot.classList.add('filled');
+            } else {
+                slot.classList.remove('filled');
+            }
+        });
+    }
+    
+
+    
+
+    
+    async function submitSelection() {
+        const question = document.getElementById('question').value.trim();
+        
+        try {
+            const resp = await fetch('/api/select_cards', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    spread_id: SPREAD_ID,
+                    question: question,
+                    card_ids: selectedIds
+                })
+            });
+            
+            const data = await resp.json();
+            if (data.error) {
+                alert(data.error);
+                return;
+            }
+            
+            currentReadingId = data.reading_id;
+            
+            if (data.cards) {
+                selectedCardsData = data.cards;
+            }
+            
+            cardDeckArea.style.display = 'none';
+            readingResult.style.display = 'block';
+            revealAll.style.display = 'inline-flex';
+            
+            revealAll.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            
+        } catch (e) {
+            console.error(e);
+            alert('提交失败，请重试');
+        }
+    }
+    
+    revealAll.addEventListener('click', function() {
+        const revealContainer = document.createElement('div');
+        revealContainer.className = 'reveal-cards-container';
+        
+        selectedCardsData.forEach((cardData, index) => {
+            setTimeout(() => {
+                const cardEl = document.createElement('div');
+                cardEl.className = 'reveal-card-item';
+                
+                const meaning = cardData.is_reversed ? cardData.card.reversed_meaning : cardData.card.upright_meaning;
+                const posMeaning = cardData.position_meaning || POSITIONS[index]?.meaning || '';
+                const orientation = cardData.is_reversed ? '逆位' : '正位';
+                
+                cardEl.innerHTML = `
+                    <div class="reveal-card-img">
+                        <img src="/static/${cardData.card.image_path}" alt="${cardData.card.name}" onerror="this.style.display='none'">
+                        ${cardData.is_reversed ? '<div class="reversed-badge">逆位</div>' : ''}
+                    </div>
+                    <div class="reveal-card-info">
+                        <div class="reveal-position">${posMeaning}</div>
+                        <div class="reveal-name">${cardData.card.name}</div>
+                        <div class="reveal-orientation ${cardData.is_reversed ? 'reversed' : ''}">${orientation}</div>
+                        <div class="reveal-meaning">${meaning}</div>
+                    </div>
+                `;
+                
+                revealContainer.appendChild(cardEl);
+                
+                if (typeof magicBurst === 'function') {
+                    const r = cardEl.getBoundingClientRect();
+                    magicBurst(r.left + r.width / 2, r.top + r.height / 2, 20);
+                }
+            }, index * 400);
+        });
+        
+        cardDeckArea.after(revealContainer);
+        revealAll.style.display = 'none';
+        
+        interpretationSection.style.display = 'block';
+        interpretationContent.innerHTML = '<div class="stream-loading"><div class="typing-indicator"><span></span><span></span><span></span></div><p class="stream-status">正在为你解读牌面，请稍候...</p></div>';
+        interpretationSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+        startStreaming(currentReadingId);
+    });
+    
+    function startStreaming(readingId) {
+        const eventSource = new EventSource(`/api/stream/${readingId}`);
+        let fullText = '';
+        let done = false;
+        
+        eventSource.onmessage = function(event) {
+            const data = JSON.parse(event.data);
+            if (data.type === 'chunk') {
+                fullText += data.content;
+                interpretationContent.innerHTML = parseMarkdown(fullText) + '<span class="cursor">|</span>';
+                interpretationContent.scrollTop = interpretationContent.scrollHeight;
+            } else if (data.type === 'done') {
+                interpretationContent.innerHTML = parseMarkdown(data.content || fullText);
+                interpretationContent.classList.add('stream-done');
+                done = true;
+                eventSource.close();
+                document.getElementById('aiChatSection').style.display = 'block';
+                initChat();
+            }
+        };
+        
+        eventSource.onerror = function() {
+            if (!done) {
+                if (!fullText) {
+                    interpretationContent.innerHTML = '<p class="text-muted">AI 解读暂时不可用</p>';
+                } else {
+                    interpretationContent.innerHTML = parseMarkdown(fullText);
+                }
+                eventSource.close();
+                document.getElementById('aiChatSection').style.display = 'block';
+                initChat();
+            }
+        };
+    }
+    
+    function initChat() {
+        const chatMessages = document.getElementById('chatMessages');
+        const chatInput = document.getElementById('chatInput');
+        const sendBtn = document.getElementById('sendBtn');
+        let isStreaming = false;
+        let currentEventSource = null;
+        
+        chatInput.addEventListener('input', function() {
+            this.style.height = 'auto';
+            this.style.height = Math.min(this.scrollHeight, 120) + 'px';
+            sendBtn.disabled = !this.value.trim() || isStreaming;
+        });
+        
+        chatInput.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                if (!sendBtn.disabled) sendMessage();
+            }
+        });
+        
+        sendBtn.addEventListener('click', sendMessage);
+        
+        function sendMessage() {
+            const content = chatInput.value.trim();
+            if (!content || isStreaming) return;
+            
+            appendMessage('user', content);
+            chatInput.value = '';
+            chatInput.style.height = 'auto';
+            sendBtn.disabled = true;
+            isStreaming = true;
+            
+            const aiMsgEl = appendMessage('ai', '');
+            const contentEl = aiMsgEl.querySelector('.message-content');
+            contentEl.innerHTML = '<div class="typing-indicator"><span></span><span></span><span></span></div>';
+            
+            const chatHistory = [];
+            const msgEls = chatMessages.querySelectorAll('.user-message, .ai-message:not(.welcome-message)');
+            msgEls.forEach(el => {
+                const role = el.classList.contains('user-message') ? 'user' : 'assistant';
+                const text = el.querySelector('.message-content').textContent;
+                if (text) chatHistory.push({ role, content: text });
+            });
+            
+            currentEventSource = new EventSource(`/api/chat?reading_id=${currentReadingId}&message=${encodeURIComponent(content)}`);
+            let responseText = '';
+            
+            currentEventSource.onmessage = function(event) {
+                const data = JSON.parse(event.data);
+                if (data.type === 'chunk') {
+                    responseText += data.content;
+                    contentEl.innerHTML = parseMarkdown(responseText) + '<span class="cursor">|</span>';
+                    chatMessages.scrollTop = chatMessages.scrollHeight;
+                } else if (data.type === 'done') {
+                    contentEl.innerHTML = parseMarkdown(data.content || responseText);
+                    currentEventSource.close();
+                    isStreaming = false;
+                    sendBtn.disabled = !chatInput.value.trim();
+                }
+            };
+            
+            currentEventSource.onerror = function() {
+                if (!responseText) {
+                    contentEl.innerHTML = '<p class="text-muted">AI 暂时无法响应，请稍后再试</p>';
+                } else {
+                    contentEl.innerHTML = parseMarkdown(responseText);
+                }
+                currentEventSource.close();
+                isStreaming = false;
+                sendBtn.disabled = !chatInput.value.trim();
+            };
+        }
+        
+        function appendMessage(role, content) {
+            const div = document.createElement('div');
+            div.className = role === 'user' ? 'user-message' : 'ai-message';
+            const avatar = role === 'user' ? '👤' : '✧';
+            div.innerHTML = `
+                <div class="message-avatar">${avatar}</div>
+                <div class="message-content">${content.replace(/\n/g, '<br>')}</div>
+            `;
+            chatMessages.appendChild(div);
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+            return div;
+        }
+    }
+    
+    document.getElementById('newReading').addEventListener('click', function() {
+        location.reload();
+    });
+});
+</script>
+{% endblock %}

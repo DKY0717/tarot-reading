@@ -1,0 +1,220 @@
+{% extends "base.html" %}
+
+{% block title %}命运之轮 - 塔罗牌占卜{% endblock %}
+
+{% block content %}
+<section class="hero">
+    <div class="hero-content">
+        <h1 class="hero-title">
+            <span class="title-line">命运之轮</span>
+            <span class="title-sub">探索未知的命运之门</span>
+        </h1>
+        <p class="hero-description">古老的塔罗牌智慧，为你揭示命运的指引</p>
+        <div class="hero-actions">
+            <a href="{{ url_for('reading', spread_id=1) }}" class="btn btn-primary">
+                <span class="btn-icon">✦</span>
+                每日一牌
+            </a>
+            <a href="{{ url_for('reading', spread_id=2) }}" class="btn btn-secondary">
+                <span class="btn-icon">✧</span>
+                三牌占卜
+            </a>
+        </div>
+    </div>
+    <div class="hero-decoration">
+        <div class="moon-phase">
+            <div class="moon"></div>
+            <div class="moon-glow"></div>
+        </div>
+    </div>
+</section>
+
+<section class="daily-card-section">
+    <div class="section-container">
+        <h2 class="section-title">
+            <span class="title-icon">☽</span>
+            今日指引
+        </h2>
+        <div class="daily-card-wrapper">
+            <div class="card-display" id="dailyCard">
+                <div class="card-back">
+                    <div class="card-pattern"></div>
+                </div>
+                <div class="card-front">
+                    <div class="card-content">
+                        <div class="card-image-container">
+                            <img src="/static/{{ daily_card.card.image_path }}" alt="{{ daily_card.card.name }}" class="card-image"
+                                 onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
+                            <div class="card-image-fallback" style="display: none;">
+                                <div class="card-symbol">✦</div>
+                            </div>
+                        </div>
+                        <h3 class="card-name">{{ daily_card.card.name }}</h3>
+                        <p class="card-name-en">{{ daily_card.card.name_en }}</p>
+                        <div class="card-orientation {% if daily_card.is_reversed %}reversed{% endif %}">
+                            {{ "逆位" if daily_card.is_reversed else "正位" }}
+                        </div>
+                        <p class="card-meaning">
+                            {{ daily_card.card.reversed_meaning if daily_card.is_reversed else daily_card.card.upright_meaning }}
+                        </p>
+                    </div>
+                </div>
+            </div>
+            <button class="btn btn-mystical" id="revealDaily">
+                <span class="btn-glow"></span>
+                揭示今日指引
+            </button>
+        </div>
+        <div class="daily-interpretation" id="dailyInterpretation" style="display: none;">
+            <h3 class="interpretation-title">
+                <span class="title-icon">✧</span>
+                今日解读
+            </h3>
+            <div class="interpretation-text" id="dailyInterpretationText"></div>
+        </div>
+    </div>
+</section>
+
+<section class="spreads-section">
+    <div class="section-container">
+        <h2 class="section-title">
+            <span class="title-icon">✦</span>
+            选择牌阵
+        </h2>
+        <div class="spreads-grid">
+            {% for spread in spreads %}
+            <a href="{{ url_for('reading', spread_id=spread.id) }}" class="spread-card">
+                <div class="spread-icon">
+                    {% if spread.layout_type == 'single' %}◇
+                    {% elif spread.layout_type == 'three_card' %}◇◇◇
+                    {% elif spread.layout_type == 'love' %}♡
+                    {% else %}✧
+                    {% endif %}
+                </div>
+                <h3 class="spread-name">{{ spread.name }}</h3>
+                <p class="spread-desc">{{ spread.description }}</p>
+                <span class="spread-count">{{ spread.positions }}张牌</span>
+            </a>
+            {% endfor %}
+        </div>
+    </div>
+</section>
+
+<section class="features-section">
+    <div class="section-container">
+        <h2 class="section-title">
+            <span class="title-icon">✧</span>
+            探索更多
+        </h2>
+        <div class="features-grid">
+            <a href="{{ url_for('cards_database') }}" class="feature-card">
+                <div class="feature-icon">📖</div>
+                <h3 class="feature-title">牌义数据库</h3>
+                <p class="feature-desc">78张韦特塔罗牌完整解读</p>
+            </a>
+            <a href="{{ url_for('history') }}" class="feature-card">
+                <div class="feature-icon">📜</div>
+                <h3 class="feature-title">占卜记录</h3>
+                <p class="feature-desc">回顾你的占卜历程</p>
+            </a>
+        </div>
+    </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const revealBtn = document.getElementById('revealDaily');
+    const dailyCard = document.getElementById('dailyCard');
+    const dailyInterpretation = document.getElementById('dailyInterpretation');
+    const dailyInterpretationText = document.getElementById('dailyInterpretationText');
+    
+    let currentCard = null;
+    
+    fetch('/api/daily')
+        .then(r => r.json())
+        .then(data => { currentCard = data.card; });
+    
+    function doReveal() {
+        if (dailyCard.classList.contains('revealed')) {
+            location.reload();
+            return;
+        }
+
+        dailyCard.classList.add('revealed');
+        revealBtn.disabled = true;
+        revealBtn.innerHTML = '<span class="spinner"></span>解读中...';
+        revealBtn.classList.add('loading');
+
+        const rect = dailyCard.getBoundingClientRect();
+        if (typeof magicBurst === 'function') {
+            magicBurst(rect.left + rect.width / 2, rect.top + rect.height / 2, 30);
+        }
+
+        dailyInterpretation.style.display = 'block';
+        dailyInterpretationText.innerHTML = '<div class="stream-loading"><div class="typing-indicator"><span></span><span></span><span></span></div><p class="stream-status">正在为你解读牌面，请稍候...</p></div>';
+        dailyInterpretation.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+        if (currentCard) {
+            fetch('/api/daily_stream', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ card: currentCard })
+            }).then(response => {
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                let fullText = '';
+                let buffer = '';
+
+                function read() {
+                    reader.read().then(({ done, value }) => {
+                        if (done) {
+                            revealBtn.disabled = false;
+                            revealBtn.classList.remove('loading');
+                            revealBtn.innerHTML = '重新抽取';
+                            return;
+                        }
+
+                        buffer += decoder.decode(value, { stream: true });
+                        const lines = buffer.split('\n');
+                        buffer = lines.pop();
+
+                        for (const line of lines) {
+                            if (line.startsWith('data: ')) {
+                                try {
+                                    const data = JSON.parse(line.slice(6));
+                                    if (data.type === 'chunk') {
+                                        fullText += data.content;
+                                        dailyInterpretationText.innerHTML = parseMarkdown(fullText) + '<span class="cursor">|</span>';
+                                    } else if (data.type === 'done') {
+                                        dailyInterpretationText.innerHTML = parseMarkdown(data.content || fullText);
+                                        revealBtn.disabled = false;
+                                        revealBtn.classList.remove('loading');
+                                        revealBtn.innerHTML = '重新抽取';
+                                    }
+                                } catch (e) {}
+                            }
+                        }
+
+                        read();
+                    });
+                }
+
+                read();
+            }).catch(() => {
+                dailyInterpretationText.innerHTML = '<p class="text-muted">AI 解读暂时不可用</p>';
+                revealBtn.disabled = false;
+                revealBtn.classList.remove('loading');
+                revealBtn.innerHTML = '重新抽取';
+            });
+        }
+    }
+
+    if (revealBtn && dailyCard) {
+        revealBtn.addEventListener('click', doReveal);
+        dailyCard.addEventListener('click', doReveal);
+    }
+});
+</script>
+{% endblock %}
